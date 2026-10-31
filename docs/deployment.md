@@ -143,6 +143,7 @@ ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 user@server
 更新前确认没有发送中的文件，停止后台。systemd 部署示例：
 
 ```sh
+cd /opt/tradingx-monitor
 sudo systemctl stop tradingx-monitor
 sudo -u tradingx git -C /opt/tradingx-monitor pull --ff-only
 sudo -u tradingx /opt/tradingx-monitor/.qq-venv/bin/python -m pip install -r /opt/tradingx-monitor/requirements-qq-lock.txt
