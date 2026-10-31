@@ -1,0 +1,21 @@
+[Unit]
+Description=TradingX personal monitor and QQ delivery
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=tradingx
+Group=tradingx
+WorkingDirectory=/opt/tradingx-monitor
+ExecStart=/opt/tradingx-monitor/.qq-venv/bin/python /opt/tradingx-monitor/start.py supervise
+Environment=PATH=/opt/tradingx-monitor/.qq-venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=90
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

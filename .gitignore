@@ -23,6 +23,7 @@ service/*
 .qq-venv/
 qq_bot.json
 qq_bot.tmp
+.qq-setup-*.tmp
 !data/.gitkeep
 !logs/.gitkeep
 !secrets/.gitkeep

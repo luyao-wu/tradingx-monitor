@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import tempfile
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
@@ -55,6 +56,47 @@ def save_settings(config, data):
     with os.fdopen(descriptor, "w") as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2)
     os.replace(temporary, filename)
+
+
+def configure_settings(config, appid, group_number, group_name, secret, send_video_files=False):
+    """Create a fresh, disabled bot configuration without replacing existing files."""
+    filename = config.root / "qq_bot.json"
+    secret_file = config.root / "secrets" / "qq_app_secret"
+    if filename.exists() or secret_file.exists():
+        raise QQError("configuration_exists")
+    if (not isinstance(appid, str) or not appid.isascii() or not appid.isdigit()
+            or not isinstance(group_number, str) or not group_number.isascii() or not group_number.isdigit()
+            or not isinstance(group_name, str) or not group_name.strip() or len(group_name) > 80
+            or any(ord(char) < 32 for char in group_name)
+            or not isinstance(secret, str) or not secret or len(secret) > 1024
+            or any(char.isspace() for char in secret) or type(send_video_files) is not bool):
+        raise QQError("invalid_configuration")
+    settings = {"appid": appid, "target_group_number": group_number,
+                "target_group_name": group_name.strip(), "group_openid": "", "enabled": False,
+                "send_images": True, "send_video_files": send_video_files,
+                "events": ["new_post", "updated", "video_new", "video_updated"]}
+    temporary_files, published = [], []
+    try:
+        for destination, content in ((secret_file, secret), (filename, json.dumps(settings, ensure_ascii=False, indent=2) + "\n")):
+            descriptor, temporary = tempfile.mkstemp(prefix=".qq-setup-", suffix=".tmp", dir=destination.parent)
+            temporary_files.append(temporary)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            # Publish a complete file atomically; a concurrent setup cannot be overwritten.
+            os.link(temporary, destination)
+            published.append(destination)
+    except BaseException:
+        for destination in published:
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        for temporary in temporary_files:
+            Path(temporary).unlink(missing_ok=True)
+    return {"configured": True, "appid": appid, "target_group_name": settings["target_group_name"],
+            "target_group_number": group_number, "enabled": False,
+            "send_video_files": send_video_files, "secret_displayed": False}
 
 
 def read_secret(config):

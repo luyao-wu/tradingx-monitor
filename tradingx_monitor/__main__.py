@@ -23,7 +23,7 @@ def output(value):
 
 
 def parser():
-    p = argparse.ArgumentParser(description="TradingX 本地自动监控（Python 3.9+，无第三方依赖）")
+    p = argparse.ArgumentParser(description="TradingX 本地自动监控（核心 Python 3.9+；QQ 和视频有附加依赖）")
     commands = p.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="只读验证实时接口及正文访问权限")
     commands.add_parser("once", help="执行一轮采集，首次只建立历史基线")
@@ -36,7 +36,7 @@ def parser():
     s = commands.add_parser("service", help="管理本机后台守护进程")
     s.add_argument("action", choices=("start", "stop", "status"))
     q = commands.add_parser("qq", help="QQ 官方机器人状态与发送服务")
-    q.add_argument("action", choices=("status", "doctor", "run", "test", "retry", "images", "video-test"))
+    q.add_argument("action", choices=("configure", "status", "doctor", "run", "test", "retry", "images", "video-test"))
     q.add_argument("--delivery", type=int)
     q.add_argument("--post", type=int)
     images = commands.add_parser("images", help="下载、校验和查看本机原图归档")
@@ -104,6 +104,23 @@ def export(store, args):
     output({"exported": len(rows), "path": str(args.output.resolve()), "format": args.format})
 
 
+def configure_qq(config):
+    from .qq_push import configure_settings
+    if not sys.stdin.isatty():
+        raise ValueError("请在交互式终端执行 qq configure；AppSecret 使用隐藏输入，不接受命令行或管道。")
+    if (config.root / "qq_bot.json").exists() or (config.root / "secrets" / "qq_app_secret").exists():
+        raise ValueError("已有 QQ 配置，未修改。请按部署文档备份并编辑原配置；更换密钥后重启后台。")
+    appid = input("QQ 官方机器人 AppID: ").strip()
+    number = input("目标 QQ 数字群号: ").strip()
+    name = input("目标群名称: ").strip()
+    choice = input("自动下载并发送授权视频文件？[y/N]: ").strip().lower()
+    if choice not in ("", "y", "yes", "n", "no"):
+        raise ValueError("请输入 y 或 n，尚未保存任何 QQ 配置。")
+    secret = getpass.getpass("机器人 AppSecret（隐藏输入）: ").strip()
+    output(configure_settings(config, appid, number, name, secret, choice in ("y", "yes")))
+    print("已保存本机配置，尚未启用发送。启动后台后，按监控面板显示的指令绑定目标群。")
+
+
 def main():
     os.umask(0o077)
     args = parser().parse_args()
@@ -142,7 +159,9 @@ def main():
             from .qq_push import QQAPI, QQError, QQQueue, load_settings
             store = Store(config)
             queue = QQQueue(store)
-            if args.action == "status":
+            if args.action == "configure":
+                configure_qq(config)
+            elif args.action == "status":
                 output(queue.status())
             elif args.action == "doctor":
                 api = QQAPI(config)
@@ -210,7 +229,7 @@ def main():
         # Deliberately avoid arbitrary exception values: paths or config may contain secrets.
         print("操作失败：请检查配置格式、文件权限、端口占用及输出文件是否已存在。", file=sys.stderr)
         return 1
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         print("已取消。", file=sys.stderr)
         return 130
 

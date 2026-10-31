@@ -1,212 +1,121 @@
-# TradingX 本地监控
+# TradingX Monitor
 
-用于个人授权访问的本机监控工具。源码与运行数据分开管理：SQLite 数据库、原图、视频、会员令牌和 QQ 机器人凭据保存在部署机器，不纳入 Git。
+个人部署的 TradingX 更新监控工具：归档账号有权访问的正文和原图，监控视频更新、下载完整 MP4，再通过 QQ 官方机器人推送到自己绑定的群。
 
-抓取 [TradingX](https://wall-street-skill.com/tradingx) 的站内时间线，持续发现新帖、归档授权可见正文与原图，并监控视频更新、下载完整 MP4 后发往指定 QQ 群。Python 3.9+ 核心无需第三方依赖；QQ 推送使用独立附加环境，视频下载另需 FFmpeg / FFprobe。
+每个部署者使用自己的会员账号、QQ 机器人和群配置。仓库只包含源码、配置示例和文档，不附带令牌、密钥、群绑定信息、数据库或会员内容；与原站没有官方隶属关系。
 
-## 已验证的可行性
+## 功能
 
-2026-10-23 实测：页面自身读取 `GET https://wall-street-skill.com/api/tradingx-posts`。未登录时返回 `viewer: guest`，可获取 3 条帖子的 ID、发布时间、编辑时间、点赞数、阅读数、文字长度及缩略图。3 条均为 `locked: true`，服务器没有返回真实正文或原图地址。网页上的模糊文字是占位文本，不能作为正文采集。
+| 功能 | 行为 |
+| --- | --- |
+| 帖子 | 发现新帖及编辑，保存历史版本；点赞和阅读数变化不通知 |
+| 原图 | 下载账号授权可读的原图，在本机预览并随正文发群 |
+| 视频 | 监控课程、随机 K 线复盘及文章配套视频，下载 HLS 并合并音轨 |
+| QQ | 正文分段、图片富媒体、视频/MP4 文件，持久化排队和去重 |
+| 管理 | 本机面板、健康状态、手动下载旧课程、JSONL/CSV 导出 |
+| 后台 | 独立采集、QQ 连接及发送、视频下载进程；提供 systemd 模板 |
 
-这是该网站自己的帖子时间线，采用类似 X 的展示形式。采集该页面不需要 X/Twitter API，也不能据此认定内容与 X 上的账号同步。
+默认约每 120 秒检查一次，带 10% 随机偏移。视频下载和上传另需时间，不保证两分钟内到群。首次运行建立历史基线，不批量群发或下载旧视频。
 
-公开页面脚本说明：有效 Plus/Pro 会员可以读取正文和原图；客户端使用 `Authorization: Bearer <ws_token>`，分页使用 `?before=<上一页最后一条ID>`。相关一手来源：[时间线前端](https://wall-street-skill.com/src/lib/tradingx.js)、[请求与登录头](https://wall-street-skill.com/src/lib/api.js)、[robots.txt](https://wall-street-skill.com/robots.txt)。这些是网站内部接口，稳定性没有公开承诺。robots.txt 当前将 `/api/` 列为 Disallow；此原型面向个人授权访问，扩大抓取规模或部署生产服务前应与站方确认接口使用许可。
+## 环境
 
-**2026-10-24 已用你的会员登录态实测通过**：接口返回 `viewer: member`，当前 4 条帖子均已解锁，完整正文及 6 张原图已归档；最新 #4 的新帖、编辑版本及两张原图均已实际推送到指定 QQ 群。凭据保存在本机，不后台重试密码登录。
+- macOS 或 Linux。macOS 已实测；Ubuntu 24.04 提供部署说明和 systemd 模板，需在目标服务器验收。
+- 核心 Python 3.9+、SQLite（Python 自带）。完整功能建议 Python 3.12；锁定 QQ 依赖需要 Python 3.11+。
+- QQ：自己的官方机器人 AppID、AppSecret、可添加机器人的目标群及主动发言权限。
+- 视频：FFmpeg、FFprobe，可从运行用户的 PATH 找到。
+- 原生 Windows 暂不支持（使用 POSIX 文件锁和信号）；可使用 Linux 虚拟机。
 
-2026-10-31 更新：会员重新接入后，12 条完整正文及 16 张原图已归档。第 106 期（课程 ID 158）完整 MP4 已下载并实际发送到已绑定群，QQ 客户端已显示文件卡片；文件 111,037,550 字节、1692×720、20 分 32 秒，含音轨。仓库不附带这些归档内容。
+完整配置、Linux 开机启动、迁移和故障排查见 **[首次部署说明](docs/deployment.md)**，事件和接口见 [代码逻辑](docs/architecture.md)。
 
-## 启动与检查
-
-首次部署需要自行接入有效会员账号；开启 QQ 推送还需要自己的官方机器人 AppID、AppSecret 和群绑定。仓库只提供配置示例，没有可直接使用的会员令牌或密钥。
-
-在此目录打开终端：
-
-```sh
-./monitor doctor          # 检查真实接口和当前会员权限，不保存帖子
-./monitor once            # 单轮采集，首次建立历史基线
-./monitor run             # 前台持续监控 + 本地状态页
-```
-
-状态页：<http://127.0.0.1:8765>。点击刷新只读取本地数据库，不增加对原站的请求。
-
-macOS 后台运行：
+## 先启动本机监控
 
 ```sh
+git clone https://github.com/luyao-wu/tradingx-monitor.git
+cd tradingx-monitor
+python3 --version
 ./monitor service start
 ./monitor service status
+```
+
+打开 <http://127.0.0.1:8765/>，点击“接入会员账号”，在本机填写自己的账号密码。只向原站 HTTPS 登录接口提交，程序不保存密码，本机仅保存登录令牌。也可在交互式终端执行：
+
+```sh
+./monitor auth login
+./monitor doctor
+```
+
+确认 `viewer: member` 且存在可读正文。原站浏览器登录不会自动接入监控。令牌到期需重新登录，当前不保存密码自动续期。不配置 QQ 时仍可使用本机归档和预览。
+
+`./monitor run` 是前台采集模式；完整功能使用 `service start` 或 systemd。macOS 后台命令不配置开机启动，休眠或关机会中断采集。
+
+## 接入自己的 QQ 机器人
+
+首次部署执行；已有配置不会被初始化覆盖：
+
+```sh
+python3.12 -m venv .qq-venv
+.qq-venv/bin/python -m pip install -r requirements-qq-lock.txt
+./monitor qq configure
+./monitor service stop
+./monitor service start
+```
+
+系统 Python 为相应版本时可用 `python3` 创建环境。`qq configure` 输入自己的 AppID、数字群号、群名及是否自动发送视频文件，AppSecret 隐藏输入。命令只保存本机配置，不请求 QQ、不发送消息；绑定前发送保持关闭。
+
+在面板找到绑定指令，把机器人添加到目标群，并在该群 **@机器人发送完整绑定指令**。绑定后在群机器人管理中允许主动发言，再明确发送一次测试：
+
+```sh
+./monitor qq doctor
+./monitor qq test
+./monitor qq status
+```
+
+数字群号不是官方 OpenID；不要复制其他部署者的机器人配置、密钥或绑定码。视频可在首次配置时开启，也可编辑本机 `qq_bot.json` 的 `send_video_files: true` 后重启。
+
+## 日常管理
+
+```sh
 ./monitor status
+./monitor images status
+./monitor videos status
+./monitor videos once
+./monitor videos download --id 158
 ./monitor service stop
 ```
 
-后台使用从当前授权会话启动的独立 Python 守护进程，数据和日志均在项目目录内，脱离聊天持续运行。当前共 4 个进程：守护进程、采集及网页进程、QQ 连接及发送进程、视频下载进程。下载与采集独立；采集异常退出后约 30 秒重启，QQ 或下载进程异常退出后约 60 秒重启。**没有安装开机启动项**；重启电脑后需重新执行 `service start`。电脑休眠、关机或断网期间无法采集。迁移或删除项目目录前先 `service stop`。端口或配置改变后先 stop，再 start。
+`--id` 是网站真实课程 ID，不是期数。手动下载会在完成后发到已绑定群，同群同一视频源去重。文件名按 `第106期_课程标题.mp4` 格式生成。超过 30 MB 使用完整 MP4 文件卡片，本机发送上限 195 MB，必要时尝试压缩，仍超限明确失败。
 
-此机器实测独立 launchd 进程无法读取 Documents 目录（macOS 返回 Operation not permitted），因此使用当前授权进程的后台子进程方式，不调整系统隐私权限。若需要严格的全天候运行、自动开机恢复，应部署到长期在线且已获得目录访问授权的主机，或由你配置合适的登录启动方式。
+下载失败自动退避。文件明确上传失败保留记录，修复后指定 `./monitor qq retry --delivery 记录ID`。发送结果不确定时暂停，先核对群消息再重试。
 
-## 本机接入会员正文
+## 凭据和运行数据
 
-推荐打开状态页，点击「接入会员账号」，输入登录邮箱和密码后点击「登录并接入监控」。本机服务仅将账号密码发送至原站 HTTPS 登录接口，本机只保存登录令牌，不保存账号密码，不在接口响应和日志中回显令牌。登录成功后立即验证并尝试补存正文；账号密码错误时保留已有令牌，等待你手动重试。表单要求同源请求及防伪令牌，不开放跨域提交。若原站要求额外验证，请在原站手动完成后使用下列令牌导入方式。
+| 本机路径 | 内容 | 纳入 Git |
+| --- | --- | --- |
+| `config.json`、`qq_bot.example.json` | 普通配置和无凭据示例 | 是 |
+| `qq_bot.json` | 当前部署的机器人及群绑定配置 | 否 |
+| `secrets/` | 会员令牌、QQ AppSecret、绑定码 | 否 |
+| `data/` | SQLite、原图、MP4、发送队列及游标 | 否 |
+| `logs/`、`service/` | 日志和进程状态 | 否 |
 
-也可在本机交互式终端运行 `./monitor auth login`，隐藏输入邮箱和密码，完成同样的接入与验证。
+凭据文件权限 600、运行目录 700；这是本机文件保存，不是加密保险箱。不要在源码、命令参数、Issue、截图或源码压缩包中提供凭据。迁移和备份通过可信 SSH 或加密备份传输。
 
-已有登录态时，可以手动导入令牌：
+面板只监听 `127.0.0.1`，没有公众用户登录或权限隔离；服务器管理使用 SSH 隧道。视频目前长期保留，没有自动清理策略，需要管理磁盘容量。
 
-1. 用你自己的有效 Plus/Pro 账号在浏览器登录原站，确认网页中可以看见正文。
-2. 打开该站页面的开发者工具 → Console，手动执行：
-
-   ```js
-   copy(localStorage.getItem('ws_token'))
-   ```
-
-3. 在本机交互式终端的项目目录运行：
-
-   ```sh
-   ./monitor auth set
-   ```
-
-4. 将剪贴板中的凭据粘贴到隐藏输入。文件保存到 `secrets/token`，权限为 `600`；目录权限为 `700`。不要把凭据粘贴进聊天、命令行参数或截图；完成后清空剪贴板。
-5. 运行 `./monitor doctor`。有效会员通常应返回 `viewer: member`、`readable_posts > 0`，并确认当前帖子的 `locked` 为 false。网站权限变化时以实际结果为准。
-
-运行中的进程每轮重新读取凭据，不需要重启；下轮会补存本轮扫描范围内此前受限的正文。可用 `./monitor auth status` 查看配置状态，或 `./monitor auth clear` 删除本地凭据。凭据失效后会记录错误、延后重试，需你重新登录并更新。会员失效后，先前合法归档的历史正文会保留，并明确标记为历史缓存，不冒充当前版本。
-
-进程也支持 `TRADINGX_TOKEN` 环境变量，优先级高于文件；不建议在终端历史中明文赋值。后台进程会继承启动它时的环境，之后修改终端环境不会影响已经启动的进程。推荐始终使用可热更新的本机凭据文件。`auth clear` 不会清除其他进程已有的环境变量。
-
-## 监控行为
-
-- 默认每 120 秒检查，加 10% 随机偏移，正常每轮约 108–132 秒再发起请求。
-- 按帖子 ID 去重，首次建立基线；后续新 ID 记录 `new_post`。空时间线建立基线后，第一条帖子也会计为新帖。
-- 编辑时间、正文、文字长度或配图 ID 变化记录版本；点赞、阅读数变化只更新统计，避免误报。
-- 由锁定转为可读时记录 `unlocked`；正文无法读取时保存 `text: null` 和 `locked: true`。
-- 所有分页读取完成后再提交事务。分页异常、登录态中途变化或响应格式变化时，本轮不覆盖归档。
-- 单轮最多 10 页；达到上限会显示“较旧帖子尚未覆盖”，不会宣称已抓全。可在配置中增加上限。
-- 失败使用指数退避，通常最大 30 分钟；服务端 `Retry-After` 更长时优先遵守。认证错误不会静默切回访客模式。请求重定向被阻止，防止转发凭据。
-- 事件、正文版本和帖子长期保留；采集轮次日志保留最近 1,000 次；运行日志轮转（单文件约 2 MB，3 个备份）。
-- 本地事件已接入下述 QQ 推送；未配置 Telegram、飞书或邮件。也可使用下列事件接口接入其他指定渠道。
-
-轮询只能记录实际观测到的状态。两轮之间出现后又删除的帖子可能遗漏；不把列表缺席直接判断成删除。超过分页扫描范围的旧帖编辑也不会被发现。每轮自动下载扫描范围内已解锁帖子的原图；下载行为见下文。
-
-## 原图下载与本地预览
-
-原图通过原站 `/api/tradingx-images?post=帖子ID&id=图片ID` 接口，使用本机会员凭据下载。仅允许该固定 HTTPS 来源和路径，禁止跟随重定向，不会将会员令牌发送给其他域名、QQ 或写入图片链接。
-
-原始文件保存在 `data/images/`，文件权限 600、目录权限 700；`image_assets` 表记录归属帖子、下载状态、大小与 SHA256。保存原始字节，不把缩略图放大冒充原图。每次最多下载 20 张、单张上限 20 MiB，超过限制或下载失败会明确记录。失败按退避时间重试，已下载并通过校验的原图复用本机文件。
-
-本机页面显示下载进度及每篇帖子的配图，点击可打开完整原图。仅提供本机只读图片路径，不暴露凭据。
-
-```sh
-./monitor images sync     # 补存本机已归档、当前可读帖子的配图
-./monitor images status   # 查看图片归档数量和大小
-./monitor qq images --post 4  # 为指定帖子补发尚未发送的原图，不重复已入队或已发图片
-```
-
-## 视频更新、自动下载和群文件
-
-已接入“视频课程”“随机K线复盘”及文章配套视频。依据[网站前端](https://wall-street-skill.com/src/main.js)使用的 `/api/course-items` 与 `/api/video-stream`，只监控已发布且存在可播放视频的目录条目。对于会员账号有权播放的 Cloudflare 视频，通过正常播放接口取得临时播放凭据，使用 FFmpeg 下载并合并视频、音轨为完整 MP4。
-
-2026-10-31 已记录 114 条视频，最新课程为第 106 期（实际课程 ID 158）。目录和下载首次启用时只建立基线，不批量下载或群发历史。之后发现新视频生成 `video_new`；标题、时长、简介或公开视频标识变化生成 `video_updated`。计数、排序、权限及管理更新时间单独变化不会误报。观看链接按网站实际课程 ID 生成，不能把期数当作 ID。
-
-视频检查约每 120 秒一次，加 10% 随机偏移；有独立的成功状态、失败退避与检查计划，TradingX 请求失败不会让视频等待它的退避周期。源站的创建/更新时间没有标注时区，通知使用本机实际发现时间（新加坡时间）；有明确目录日期时单独显示，不将发现时间冒充发布时间。
-
-QQ 的 `events` 包含 `video_new`、`video_updated` 时，将通知持久化到同一发送队列并去重，失败与结果不确定时沿用暂停机制。通知包含栏目、期数、标题、时长、目录日期（如有）、检测时间和观看页面链接。本机面板显示视频检查状态和群测试结果。
-
-本机 `qq_bot.json` 的 `send_video_files: true` 已开启自动下载和发送。流程是：发现更新 → 入队文字通知及下载任务 → 获取授权播放清单 → 下载、合并音轨 → 校验时长和音轨、保存 SHA256 → 上传 QQ 分片 → 群消息确认后记为已发。下载进程每 5 秒检查队列，按任务顺序处理；视频下载和上传耗时取决于文件大小与网络，不保证两分钟内到群。
-
-发送文件名按期数及标题生成，例如 `第106期_比特币日线思路更新.mp4`；没有期数的条目使用视频 ID。物理缓存使用归档键命名，本机打开或保存时也提供可读文件名。相同课程的同一视频源复用缓存，同群同一文件不重复发送。目录标题变化会发更新通知，但不会重复发送未变更的视频源。
-
-参考了 [Deal-Data](https://github.com/ChuXin-Wu/Deal-Data) 的 HLS → MP4 方案，使用本机同仓库 `wall-street-deal/download_episode.py` 核对；自动从正常会员接口取得播放信息，免去每期手动导出 HAR。临时签名只写入权限 600 的本机工作清单，任务结束删除，不出现在命令参数、日志、状态接口或 QQ 消息中；会员令牌只发送至原站。
-
-默认选择估算能在限制内发送的最高档画质（最多 1080P），保留完整时长和音轨。QQ 视频软限制 30 MB，超过后使用完整 MP4 文件卡片；本机发送上限留余量为 195 MB，超过会尝试压缩，仍超限则明确失败，不发送残缺文件。[官方富媒体接口](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_files.post.html)、[分片准备接口](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_id_upload_prepare.post.html)。群内文件可能到期（本次 QQ 显示 14 天），本地 MP4 会保留。当前下载器支持此站 Cloudflare HLS；仅 YouTube 外链或需额外 DRM 的内容不在本次下载支持范围，目录通知仍可发送。
-
-```sh
-./monitor videos status   # 本地视频目录和健康状态
-./monitor videos once     # 立即检查目录；首次建基线
-./monitor videos download --id 158  # 手动排入一条已有课程的下载任务；参数是课程 ID
-./monitor qq video-test   # 向已绑定群发送一条明确标注测试的现有视频通知
-```
-
-已用第 106 期完成一次真实下载及群文件发送，QQ 客户端显示 `video-158.mp4`（初次测试的旧命名）；后续已改为上述期数命名，未重复发送测试文件。自动检测、队列与去重由回归测试验证，未把现有课程伪造为新视频。下载失败按 2 分钟至 1 小时退避；视频上传明确失败会保留错误，修复后执行 `qq retry --delivery 记录ID`，不会因此拦住后续文字。发送结果不确定时需先检查群内消息，再决定重试。
-
-## 数据与接口
-
-```text
-data/monitor.sqlite3       SQLite：posts / revisions / events / polls / state
-logs/monitor.log           可轮转运行日志，不包含登录凭据
-logs/supervisor.log        守护进程的启动、退出与重启记录
-logs/service-stderr.log    后台启动诊断
-data/images/              会员授权下载的原图；不随源码打包
-data/videos/              完整 MP4 缓存；不随源码打包
-secrets/token              本机会员凭据（不打包，不提交）
-service/state.json         当前机器的进程状态（不打包）
-```
-
-服务仅监听 `127.0.0.1`，不开放跨域访问，并校验 Host。归档数据接口只读；账号登录接口仅在你明确提交时使用。状态页会显示已归档的授权内容，因此只应在可信本机使用；没有对外部署认证系统。
-
-| 接口 | 用途 |
-| --- | --- |
-| `/api/status` | 最近采集、权限、覆盖范围、下次检查及健康状态 |
-| `/api/posts?limit=50` | 本地最新帖子与明确标注的历史缓存 |
-| `/api/images/status` | 原图下载完成、等待、失败数量及总大小 |
-| `/api/images/归档键` | 本机原图；仅返回已下载且通过 SHA256 校验的文件 |
-| `/api/videos/status` | 独立视频目录健康状态、下次检查、下载进度和最新 MP4 |
-| `/api/videos?limit=10` | 本机视频目录记录 |
-| `/api/video-files/归档键` | 本机 MP4 播放或保存，支持 HTTP Range 拖动 |
-| `/api/events?limit=30` | 最近事件，最新在前 |
-| `/api/events?after=0&limit=100` | 按事件 ID 从小到大读取，保存最后的 ID 作为下次游标 |
-| `/api/revisions?id=3` | 某一帖子已观测的版本 |
-| `/healthz` | 新鲜且最近无采集错误时 200，否则 503；正文可读性另看 viewer/warning |
-| `GET /api/auth/session` | 为本机登录表单提供防伪令牌 |
-| `POST /api/auth/login` | 同源提交邮箱和密码，登录原站、保存令牌并验证正文；不返回令牌 |
-
-事件消费方应先请求 `after=0`，按响应最后一个事件的 ID 继续翻页，直到空列表；这样突发大量事件时不会跳过。状态中的 `healthy` 表示采集新鲜且没有请求错误，并不表示已取得会员正文，也不单独证明后台进程还存活。
-
-导出示例（文件名不能已存在，避免误覆盖）：
-
-```sh
-./monitor export --format jsonl --output data/posts-2026-10-23.jsonl
-./monitor export --format csv --output data/posts-2026-10-23.csv
-```
-
-JSONL 保留图片元信息；CSV 保留正文和图片数量，供表格查看，正文中的潜在公式前缀会转义。导出不含登录凭据。备份 SQLite 时，先停服务再复制；运行中需要使用 SQLite 的 backup API，不能仅复制主文件而忽略 WAL。
-
-## 配置和验证
-
-`config.json`：`interval_seconds`（最小 60 秒）、`request_timeout`、`max_pages`、`jitter_ratio`、`max_backoff_seconds`、`port`。更改后重启后台进程。
+## 验证与限制
 
 ```sh
 python3 -m unittest discover -s tests -v
 ```
 
-52 项自动测试覆盖正文及图片既有流程、视频目录筛选、真实课程 ID、历史基线、更新通知，并覆盖音轨保留、HLS 来源限制、下载失败退避、完整性校验、已完成任务补入 QQ 队列、文件去重、上传失败隔离、QQ 分片的 0/1 起始编号、完整 MP4 文件类型及本机 Range 播放。另已完成真实会员正文、原图、视频通知和第 106 期完整视频群文件的送达验证。
+测试使用临时数据库、模拟凭据和模拟接口，不需要真实账号，不会发群。维护者已验证会员正文、原图及完整有声 MP4 的真实下载与 QQ 送达；账号和内容不随仓库分发。
 
-## QQ 官方机器人推送
+- 仅适配当前站点接口，不是 X/Twitter 官方采集工具；接口变动可能需要更新。
+- 默认最多扫描 10 页。两轮之间出现又删除的内容可能遗漏，超出范围的旧帖编辑可能未覆盖。
+- 只下载账号有权播放的 Cloudflare HLS；YouTube 外链和额外 DRM 暂不支持下载。
+- 本项目不授予网站内容的传播权。使用者需确认账号权限、网站约定和内容转发授权。站点 [robots.txt](https://wall-street-skill.com/robots.txt) 将 `/api/` 列为 Disallow，接口可访问不等同于自动抓取获许可。
 
-官方机器人“订阅更新提醒”已完成 AppSecret、群绑定、WebSocket 及群内主动发言的真实验证，正文、原图和完整 MP4 均已送达已绑定群。每次新部署须使用自己的机器人及目标群配置。本机的 `qq_bot.json` 保存目标信息，`secrets/qq_app_secret` 保存 AppSecret（权限必须为 600）。这些运行配置及密钥不打包、不提交。
+## 来源与授权状态
 
-QQ 的 `group_openid` 与数字群号不同。初次接入必须先把机器人加到目标群，再在该群 @机器人发送本地状态页显示的“绑定推送 群号 一次性校验码”。校验通过后才保存 OpenID 并启用发送，不能直接将数字群号当作 OpenID 调用接口。绑定完成时从当前事件游标开始，只发送之后的新帖与编辑，不回放历史归档。
+站点适配依据其公开前端及正常授权接口。视频下载思路参考 [Deal-Data](https://github.com/luyao-wu/Deal-Data) 的 HLS → FFmpeg 方案，本仓库未捆绑其下载脚本。Python、FFmpeg、QQ SDK 等依赖遵循各自许可证；程序调用系统安装的 FFmpeg。
 
-本机状态页展示 QQ 连接、绑定、正文与图片已发数量、待发条数。正文拆分为较短消息；`send_images: true` 时，先发送正文，再逐张上传并发送原图（QQ 富媒体消息）。同群同一张已入队/已发原图去重，正文编辑不会重复发送未变更的图片，新配图会补发。原图只下载到本机再上传至 QQ，不公开会员图片链接；小图片直接上传，大于 3.5 MB 的图片使用官方分片接口。[官方图片上传接口](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_files.post.html)。
-
-发送记录持久化在 `qq_outbox`。发送超时、程序中断或缺少平台确认消息 ID 时，标记为结果不确定并暂停后续发送；请先核对群消息，避免自动重试产生重复。正文和图片的明确失败会暂停队列；视频文件明确上传失败单独保留，不拦住其他待发消息。修复原因后可指定记录重试。图片未下载时先保留在队列等待，不将缩略图作为替代发送。
-
-绑定回执属于回复用户的被动消息，不能证明主动推送可用。出现 `40034105` 时，请在手机 QQ 的目标群机器人管理中开启“主动在群聊内发言”或“允许主动发送”，然后执行 `./monitor qq test`；失败状态会持续显示到主动测试或帖子发送成功。[官方消息规则](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html)说明：用户关闭允许主动发送时，主动消息会失败。
-
-```sh
-# QQ 附加依赖使用独立环境，不影响原有采集进程
-python3 -m venv .qq-venv
-.qq-venv/bin/python -m pip install -r requirements-qq.txt
-# 首次部署时复制示例，然后填写自己的 AppID、数字群号和群名
-cp qq_bot.example.json qq_bot.json
-chmod 600 qq_bot.json
-# 用本机编辑器将 AppSecret 写入 secrets/qq_app_secret，不要放在命令参数或 Git 中
-chmod 600 secrets/qq_app_secret
-./monitor qq status
-./monitor qq doctor       # 验证官方鉴权和 WebSocket 网关，不发消息
-./monitor qq test         # 仅在已绑定目标群后，明确发送一条测试消息
-./monitor qq retry --delivery 发送记录ID
-```
-
-后台管理器检测到 `.qq-venv`、`qq_bot.json` 及密钥文件后，自动拉起独立的 QQ WebSocket 子进程。它仅处理 @机器人的绑定指令，不保存或转发其他群聊天内容。使用当前官方域名 `https://api.bot.qq.com`，密钥和 access_token 不在状态接口或运行日志中展示。
-
-设置 `send_video_files: true` 后，后台管理器另启动 `videos worker`。本机已安装 `/opt/homebrew/bin/ffmpeg` 与 `ffprobe`；更换主机时需安装这两个程序、恢复会员及 QQ 配置。首次启用下载会跳过此前事件；如需旧视频，只对指定课程执行 `videos download --id`。
-
-官方凭据重置须由账号本人在官方界面完成。将新 AppSecret 放入本机密钥文件后，重启后台以替换旧连接；机器人加入目标群并成功绑定之后，才能认为 QQ 推送已启用。仅创建机器人或启动采集不代表推送成功。
+本仓库暂未指定开源许可证。源码公开可见不等于授予任意修改、再分发或商用授权；授权范围请与维护者确认。[GitHub 关于许可证的说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)
