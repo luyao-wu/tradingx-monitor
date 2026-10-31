@@ -16,6 +16,7 @@ from .service import service, supervise
 from .store import Store, now
 from .qq_push import QQError
 from .video_downloads import VideoDownloadError
+from .telegram_push import TelegramError
 
 
 def output(value):
@@ -39,6 +40,9 @@ def parser():
     q.add_argument("action", choices=("configure", "status", "doctor", "run", "test", "retry", "images", "video-test"))
     q.add_argument("--delivery", type=int)
     q.add_argument("--post", type=int)
+    telegram = commands.add_parser("telegram", help="可选 Telegram 推送（默认关闭）")
+    telegram.add_argument("action", choices=("configure", "status", "run", "doctor", "test", "retry"))
+    telegram.add_argument("--delivery", type=int)
     images = commands.add_parser("images", help="下载、校验和查看本机原图归档")
     images.add_argument("action", choices=("sync", "status"))
     videos = commands.add_parser("videos", help="视频目录更新监控与状态")
@@ -118,7 +122,25 @@ def configure_qq(config):
         raise ValueError("请输入 y 或 n，尚未保存任何 QQ 配置。")
     secret = getpass.getpass("机器人 AppSecret（隐藏输入）: ").strip()
     output(configure_settings(config, appid, number, name, secret, choice in ("y", "yes")))
-    print("已保存本机配置，尚未启用发送。启动后台后，按监控面板显示的指令绑定目标群。")
+    print("已保存本机配置，尚未启用发送。用 ./monitor qq status 查看绑定指令，启动后台后完成绑定。")
+
+
+def configure_telegram(config):
+    from .telegram_push import configure_settings
+    if not sys.stdin.isatty():
+        raise ValueError("请在交互式终端执行 telegram configure；Bot Token 使用隐藏输入，不接受命令参数或管道。")
+    if (config.root / "telegram_bot.json").exists() or (config.root / "secrets/telegram_bot_token").exists():
+        raise ValueError("已有 Telegram 配置，未修改。请按部署文档备份并编辑原配置。")
+    chat_id = input("Telegram Chat ID 或 @频道用户名: ").strip()
+    topic = input("话题 message_thread_id（无则留空）: ").strip()
+    if topic and (not topic.isascii() or not topic.isdigit() or int(topic) <= 0):
+        raise ValueError("话题 ID 应为正整数。尚未保存配置。")
+    choice = input("自动发送授权视频文件（云端上限 50 MB）？[y/N]: ").strip().lower()
+    if choice not in ("", "y", "yes", "n", "no"):
+        raise ValueError("请输入 y 或 n。尚未保存配置。")
+    token = getpass.getpass("Telegram Bot Token（隐藏输入）: ").strip()
+    output(configure_settings(config, chat_id, token, int(topic) if topic else None, choice in ("y", "yes")))
+    print("已保存，enabled=false；没有请求 Telegram 或发送消息。确认目标后在本机配置启用，再重启后台。")
 
 
 def main():
@@ -156,7 +178,7 @@ def main():
                     raise error
                 output(result)
         elif args.command == "qq":
-            from .qq_push import QQAPI, QQError, QQQueue, load_settings
+            from .qq_push import QQAPI, QQQueue, load_settings
             store = Store(config)
             queue = QQQueue(store)
             if args.action == "configure":
@@ -189,6 +211,29 @@ def main():
                 with store.connect() as db:
                     db.execute("UPDATE qq_outbox SET status='pending',error_code=NULL WHERE id=? AND status IN ('failed','uncertain')", (args.delivery,))
                 output({"queued_for_retry": args.delivery})
+        elif args.command == "telegram":
+            from .telegram_push import TelegramAPI, TelegramQueue, load_settings, run_telegram
+            if args.action == "configure":
+                configure_telegram(config)
+            elif args.action == "run":
+                run_telegram(config)
+            else:
+                store = Store(config)
+                queue = TelegramQueue(store)
+                if args.action == "status":
+                    output(queue.status())
+                elif args.action == "doctor":
+                    output(TelegramAPI(config).doctor())
+                elif args.action == "test":
+                    settings = load_settings(config)
+                    if not settings["enabled"]: raise TelegramError("not_enabled")
+                    ack = TelegramAPI(config).send_message(settings["chat_id"], "TradingX Telegram 推送测试：这是明确发送的一条测试消息。", settings["message_thread_id"])
+                    with store.connect() as db: store._update(db, telegram_last_test=now())
+                    output({"sent": True, "message_id": ack})
+                else:
+                    if not args.delivery: raise ValueError("请先核对实际消息，再用 --delivery 指定 Telegram 发送记录。")
+                    queue.retry(args.delivery)
+                    output({"queued_for_retry": args.delivery})
         elif args.command == "doctor":
             result = Client(config).fetch()
             output({"source_reachable": True, "viewer": result["viewer"], "auth_configured": result["auth_configured"],
@@ -221,6 +266,9 @@ def main():
         return 1
     except VideoDownloadError as error:
         output({"ok":False,"code":error.code,"message":str(error)})
+        return 1
+    except TelegramError as error:
+        output({"ok": False, "code": error.code, "message": str(error)})
         return 1
     except ValueError as error:
         print(str(error), file=sys.stderr)

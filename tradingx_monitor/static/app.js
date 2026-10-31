@@ -35,11 +35,13 @@ let busy=false;
 async function refresh() {
   if(busy) return; busy=true;
   try {
-    const [state,posts,events,qq,images,video]=await Promise.all([get('/api/status'),get('/api/posts?limit=50'),get('/api/events?limit=30'),get('/api/qq/status'),get('/api/images/status'),get('/api/videos/status')]);
+    const [state,posts,events,qq,images,video,telegram]=await Promise.all([get('/api/status'),get('/api/posts?limit=50'),get('/api/events?limit=30'),get('/api/qq/status'),get('/api/images/status'),get('/api/videos/status'),get('/api/telegram/status')]);
     const qqReady=qq.enabled&&qq.bound&&qq.connection==='connected';
     const qqPermissionMissing=qq.last_error==='40034105';
     $('qqStatus').textContent=!qq.configured?'未配置':!qq.secret_configured?'等待接口密钥':!qq.bound?'等待绑定':qqPermissionMissing?'等待开启主动发送':qq.last_error?'发送需检查':qqReady?(qq.active_send_verified?'已启用':'等待主动推送验证'):'正在连接';
     $('qqDetails').textContent=qq.configured?`机器人对话框 · 已发正文 ${qq.sent_text??0} 条 · 图片 ${qq.sent_images??0} 张 · 待发 ${qq.outbox.pending??0} 条${qq.waiting_image?' · 等待原图下载':''}${qq.last_error?' · 错误码 '+qq.last_error:''}${qqPermissionMissing?' · 请检查机器人主动发送权限':''}${qq.last_test&&!qq.last_error?' · 主动测试已通过':''}`:'尚未配置机器人对话框。';
+    $('telegramStatus').textContent=!telegram.configured?'未配置 · 默认关闭':!telegram.enabled?'已配置 · 未启用':telegram.last_error?'发送需检查':telegram.live_delivery_verified?'已启用 · 已有送达记录':'已启用 · 尚未验证送达';
+    $('telegramDetails').textContent=telegram.configured?`Telegram 机器人对话框 · 已发正文 ${telegram.sent_text??0} 条 · 原图文件 ${telegram.sent_images??0} 个 · 视频 ${telegram.sent_video_files??0} 个 · 超限链接 ${telegram.sent_video_links??0} 条 · 待发 ${telegram.outbox?.pending??0} 条${telegram.last_error?' · 错误码 '+telegram.last_error:''}`:'功能已预置；自行配置 Token 和会话后启用，当前未连接真实 Telegram。';
     $('imageStatus').textContent=`原图已保存 ${images.counts.ready??0}/${images.total} 张 · ${(images.bytes/1024/1024).toFixed(2)} MiB${images.counts.failed?' · '+images.counts.failed+' 张下载失败，自动重试':''}${images.counts.pending?' · '+images.counts.pending+' 张等待下载':''}`;
     $('videoStatus').textContent=!video.initialized?'等待建立基线':video.last_error?'视频检查异常':video.healthy?(qq.video_notifications_enabled?'监控中 · 群通知已启用':'目录正常 · 群通知未启用'):'等待检查 / 数据已过期';
     $('videoDetails').textContent=`已记录 ${video.stored_videos} 条视频 · 最近检查 ${formatTime(video.last_success)}${video.next_check?' · 下次 '+formatTime(video.next_check*1000):''} · 新视频通知已发 ${qq.sent_videos??0} 条${qq.video_last_test?' · 群通知测试已通过':''}${video.last_error?' · '+video.last_error:''}`;

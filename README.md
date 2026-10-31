@@ -12,6 +12,7 @@
 | 原图 | 下载账号授权可读的原图，在本机预览并随正文发群 |
 | 视频 | 监控课程、随机 K 线复盘及文章配套视频，下载 HLS 并合并音轨 |
 | QQ | 正文分段、图片富媒体、视频/MP4 文件，持久化排队和去重 |
+| Telegram（可选） | 独立文字、原图文件、视频通知和小于云端上限的 MP4；默认关闭，尚未真实联调 |
 | 管理 | 本机面板、健康状态、手动下载旧课程、JSONL/CSV 导出 |
 | 后台 | 独立采集、QQ 连接及发送、视频下载进程；提供 systemd 模板 |
 
@@ -26,6 +27,8 @@
 - 原生 Windows 暂不支持（使用 POSIX 文件锁和信号）；可使用 Linux 虚拟机。
 
 完整配置、Linux 开机启动、迁移和故障排查见 **[首次部署说明](docs/deployment.md)**，事件和接口见 [代码逻辑](docs/architecture.md)。
+
+Telegram 可单独使用或与 QQ 并行，使用者自行配置自己的 Bot Token 与目标。接入、50 MB 视频限制及验证范围见 **[Telegram 预置适配说明](docs/telegram.md)**。本次只提供代码和离线测试，不包含真实 Telegram 送达验证。
 
 ## 先启动本机监控
 
@@ -93,7 +96,8 @@ python3.12 -m venv .qq-venv
 | --- | --- | --- |
 | `config.json`、`qq_bot.example.json` | 普通配置和无凭据示例 | 是 |
 | `qq_bot.json` | 当前部署的机器人及群绑定配置 | 否 |
-| `secrets/` | 会员令牌、QQ AppSecret、绑定码 | 否 |
+| `telegram_bot.json` | 可选 Telegram 的本机目标及开关 | 否 |
+| `secrets/` | 会员令牌、QQ AppSecret、Telegram Token、绑定码 | 否 |
 | `data/` | SQLite、原图、MP4、发送队列及游标 | 否 |
 | `logs/`、`service/` | 日志和进程状态 | 否 |
 
@@ -107,7 +111,7 @@ python3.12 -m venv .qq-venv
 python3 -m unittest discover -s tests -v
 ```
 
-测试使用临时数据库、模拟凭据和模拟接口，不需要真实账号，不会发群。维护者已验证会员正文、原图及完整有声 MP4 的真实下载与 QQ 送达；账号和内容不随仓库分发。
+测试使用临时数据库、模拟凭据和模拟接口，不需要真实账号，不会发群。维护者已验证会员正文、原图及完整有声 MP4 的真实下载与 QQ 送达；Telegram 仅完成离线模拟测试，尚未验证真实送达。账号和内容不随仓库分发。
 
 - 仅适配当前站点接口，不是 X/Twitter 官方采集工具；接口变动可能需要更新。
 - 默认最多扫描 10 页。两轮之间出现又删除的内容可能遗漏，超出范围的旧帖编辑可能未覆盖。

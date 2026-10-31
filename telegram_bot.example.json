@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "chat_id": "",
+  "message_thread_id": null,
+  "send_images": true,
+  "send_video_files": false,
+  "events": ["new_post", "updated", "video_new", "video_updated"]
+}

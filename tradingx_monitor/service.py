@@ -34,6 +34,7 @@ def status(config):
     worker = data.get("worker_pid")
     qq_worker = data.get("qq_worker_pid")
     video_worker = data.get("video_worker_pid")
+    telegram_worker = data.get("telegram_worker_pid")
     running = _process_matches(config, pid, "supervise")
     return {"backend": "detached-supervisor", "running": running,
             "pid": pid if running else None,
@@ -43,6 +44,8 @@ def status(config):
             "qq_worker_pid": qq_worker if running else None,
             "video_worker_running": running and _process_matches(config,video_worker,"videos worker"),
             "video_worker_pid":video_worker if running else None,
+            "telegram_worker_running": running and _process_matches(config,telegram_worker,"telegram run"),
+            "telegram_worker_pid":telegram_worker if running else None,
             "dashboard_url": f"http://127.0.0.1:{config.port}",
             "scope": "本机后台进程；重启电脑后需重新 start"}
 
@@ -80,6 +83,7 @@ def service(config, action):
 
 
 def supervise(config):
+    from .telegram_push import ready as telegram_ready, videos_enabled as telegram_videos_enabled
     stopped = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stopped.set())
@@ -92,6 +96,8 @@ def supervise(config):
     child = None
     qq_child = None
     video_child = None
+    telegram_child = None
+    telegram_retry_at = 0
     video_retry_at = 0
     qq_retry_at = 0
     qq_python = config.root / ".qq-venv" / "bin" / "python"
@@ -100,6 +106,7 @@ def supervise(config):
         temporary = state_file.with_suffix(".tmp")
         temporary.write_text(json.dumps({"supervisor_pid": os.getpid(), "worker_pid": child.pid,
                                         "qq_worker_pid": qq_child.pid if qq_child else None,
+                                        "telegram_worker_pid": telegram_child.pid if telegram_child else None,
                                         "video_worker_pid":video_child.pid if video_child else None,"started_at": now()}))
         os.replace(temporary, state_file)
 
@@ -112,6 +119,19 @@ def supervise(config):
                 save_processes()
                 logger.info("worker_started pid=%s", child.pid)
                 while not stopped.wait(0.5) and child.poll() is None:
+                    if telegram_ready(config) and (telegram_child is None or telegram_child.poll() is not None) and time.time() >= telegram_retry_at:
+                        telegram_child = subprocess.Popen([sys.executable, str(config.root / "start.py"), "telegram", "run"],
+                            cwd=config.root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, close_fds=True)
+                        telegram_retry_at = time.time() + 60
+                        save_processes()
+                        logger.info("telegram_worker_started pid=%s", telegram_child.pid)
+                    elif telegram_child and telegram_child.poll() is None and not telegram_ready(config):
+                        telegram_child.terminate()
+                        try: telegram_child.wait(timeout=10)
+                        except subprocess.TimeoutExpired: telegram_child.kill(); telegram_child.wait()
+                        telegram_child = None
+                        save_processes()
                     ready = qq_python.exists() and (config.root / "qq_bot.json").exists() and (config.root / "secrets" / "qq_app_secret").exists()
                     if ready and (qq_child is None or qq_child.poll() is not None) and time.time() >= qq_retry_at:
                         qq_child = subprocess.Popen([str(qq_python), str(config.root / "start.py"), "qq", "run"],
@@ -123,6 +143,7 @@ def supervise(config):
                     try:
                         video_ready = ready and json.loads((config.root/"qq_bot.json").read_text()).get("send_video_files") is True
                     except (OSError,ValueError):video_ready = False
+                    video_ready = video_ready or telegram_videos_enabled(config)
                     if video_ready and (video_child is None or video_child.poll() is not None) and time.time()>=video_retry_at:
                         video_child = subprocess.Popen([sys.executable,str(config.root/"start.py"),"videos","worker"],
                             cwd=config.root,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
@@ -133,6 +154,10 @@ def supervise(config):
                 logger.warning("worker_exited code=%s restarting_in=30s", child.returncode)
                 stopped.wait(30)
         finally:
+            if telegram_child and telegram_child.poll() is None:
+                telegram_child.terminate()
+                try: telegram_child.wait(timeout=10)
+                except subprocess.TimeoutExpired: telegram_child.kill(); telegram_child.wait()
             if video_child and video_child.poll() is None:
                 video_child.terminate()
                 try:video_child.wait(timeout=15)

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tradingx_monitor.__main__ import configure_qq
+from tradingx_monitor.__main__ import configure_qq, configure_telegram
 from tradingx_monitor.config import Config
 from tradingx_monitor.qq_push import QQError, configure_settings, load_settings, read_secret
 
@@ -72,6 +72,23 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn('fake-hidden-secret', output.getvalue())
         self.assertFalse(load_settings(self.config)['enabled'])
         self.assertFalse(load_settings(self.config)['send_video_files'])
+
+    def test_telegram_cli_is_offline_hidden_and_disabled_after_configuration(self):
+        from tradingx_monitor.telegram_push import load_settings as telegram_settings, ready
+        with patch('tradingx_monitor.__main__.sys.stdin.isatty', return_value=False):
+            with self.assertRaises(ValueError): configure_telegram(self.config)
+        token = str(123456) + ':' + 'x' * 35
+        output = io.StringIO()
+        with patch('tradingx_monitor.__main__.sys.stdin.isatty', return_value=True), \
+             patch('builtins.input', side_effect=['-1001234567890', '', 'n']), \
+             patch('tradingx_monitor.__main__.getpass.getpass', return_value=token), \
+             patch('urllib.request.OpenerDirector.open', side_effect=AssertionError('network forbidden')) as network, \
+             patch('sys.stdout', output):
+            configure_telegram(self.config)
+        network.assert_not_called()
+        self.assertNotIn(token, output.getvalue())
+        self.assertFalse(telegram_settings(self.config)['enabled'])
+        self.assertFalse(ready(self.config))
 
 
 if __name__ == '__main__':

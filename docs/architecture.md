@@ -43,6 +43,14 @@
 
 正文和图片明确失败暂停队列；视频文件明确上传失败单独保留，不阻止后续文字。发送超时、进程中断、缺少消息 ID 等标为 `uncertain` 并暂停，必须先核对群消息再决定重试。下载退避和发送结果确认是不同阶段。
 
+## Telegram 可选通道
+
+`telegram_push.py` 以独立的 `telegram_outbox`、游标及目标指纹消费同一套归档事件，与 QQ 的去重、暂停和重试状态隔离。默认关闭，不读取 QQ 绑定；Token 和 Chat ID 均由使用者在本机配置，网页仅返回脱敏状态。初始化不请求 Telegram，后台出站无需 Webhook 或 getUpdates。
+
+首次启用建立事件基线，并以事件下限过滤此前完成的视频，避免补发旧归档。之后只处理新事件及其就绪媒体。视频下载是否启用由 QQ 或启用的 Telegram 视频开关共同决定；TG 单独使用时也能拉起下载进程。发送文本、原图文件、云端大小限制内的 MP4，超限时单独记录链接通知。
+
+HTTP 429 尊重 retry_after；超时、5xx、缺少消息 ID 等不确定结果暂停 TG，发送中断重启后标为 uncertain。目标指纹变化暂停而不转投旧队列。Token 只用于固定 Telegram HTTPS API URL，异常不回显 URL 或远端描述；媒体用流式 multipart，不附带会员凭据。当前仅有离线模拟测试，使用者需另行验证真实服务。
+
 ## 本机接口
 
 只监听 `127.0.0.1`，校验 Host/端口及登录 Origin/CSRF，没有公共账号系统。服务器用相同端口的 SSH 隧道访问。
@@ -55,6 +63,7 @@
 | `/api/videos/status`、`/api/videos?limit=10` | 目录、下载进度及最新文件 |
 | `/api/video-files/归档键` | MP4，支持 Range 和可读保存名 |
 | `/api/qq/status` | 当前 QQ 连接、绑定和队列 |
+| `/api/telegram/status` | 默认关闭的可选 Telegram 状态，脱敏 Chat ID/话题，无 Token |
 | `/api/events?after=0&limit=100` | 从指定游标之后读取事件 |
 | `/api/revisions?id=3` | 指定帖子的观测版本 |
 | `/healthz` | 采集新鲜且最近无错时 200，否则 503 |

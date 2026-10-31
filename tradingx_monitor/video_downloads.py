@@ -180,9 +180,14 @@ class VideoDownloads:
             """)
 
     def enabled(self):
-        from .qq_push import load_settings
-        if not (self.config.root/"qq_bot.json").exists():return False
-        return load_settings(self.config).get("send_video_files", False)
+        from .qq_push import QQError, load_settings
+        from .telegram_push import videos_enabled
+        if (self.config.root / "qq_bot.json").exists():
+            try:
+                if load_settings(self.config).get("send_video_files", False): return True
+            except (QQError, OSError, ValueError):
+                pass
+        return videos_enabled(self.config)
 
     def request(self, video_id):
         from .videos import VideoMonitor

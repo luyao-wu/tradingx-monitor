@@ -67,6 +67,13 @@ def make_server(config, store):
                     else:
                         from .qq_push import QQQueue
                         self.reply({"configured": True, **QQQueue(store).status(redact_target=True)})
+                elif parsed.path == "/api/telegram/status":
+                    if not (config.root / "telegram_bot.json").exists():
+                        self.reply({"configured": False, "enabled": False, "live_delivery_verified": False})
+                    else:
+                        from .telegram_push import TelegramError, TelegramQueue
+                        try: self.reply(TelegramQueue(store).status(redact_target=True))
+                        except TelegramError as error: self.reply({"configured": True, "enabled": False, "last_error": error.code, "live_delivery_verified": False})
                 elif parsed.path == "/api/auth/session":
                     self.reply({"csrf": csrf})
                 elif parsed.path == "/api/posts":

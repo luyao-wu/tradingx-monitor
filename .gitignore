@@ -25,6 +25,9 @@ service/*
 qq_bot.json
 qq_bot.tmp
 .qq-setup-*.tmp
+telegram_bot.json
+telegram_bot.tmp
+.telegram-setup-*.tmp
 !data/.gitkeep
 !logs/.gitkeep
 !secrets/.gitkeep
