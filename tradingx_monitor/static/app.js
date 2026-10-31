@@ -38,8 +38,8 @@ async function refresh() {
     const [state,posts,events,qq,images,video]=await Promise.all([get('/api/status'),get('/api/posts?limit=50'),get('/api/events?limit=30'),get('/api/qq/status'),get('/api/images/status'),get('/api/videos/status')]);
     const qqReady=qq.enabled&&qq.bound&&qq.connection==='connected';
     const qqPermissionMissing=qq.last_error==='40034105';
-    $('qqStatus').textContent=!qq.configured?'未配置':!qq.secret_configured?'等待接口密钥':!qq.bound?'等待加群与绑定':qqPermissionMissing?'等待群内开启主动发言':qq.last_error?'发送需检查':qqReady?(qq.active_send_verified?'已启用':'等待主动推送验证'):'正在连接';
-    $('qqDetails').textContent=qq.configured?`目标：${qq.target_group_name}（${qq.target_group_number}） · 已发正文 ${qq.sent_text??0} 条 · 图片 ${qq.sent_images??0} 张 · 待发 ${qq.outbox.pending??0} 条${qq.waiting_image?' · 等待原图下载':''}${qq.last_error?' · 错误码 '+qq.last_error:''}${qqPermissionMissing?' · 请在手机 QQ 群机器人管理中开启允许主动发送':''}${qq.last_test&&!qq.last_error?' · 主动测试已通过':''}`:'尚未配置 QQ 机器人。';
+    $('qqStatus').textContent=!qq.configured?'未配置':!qq.secret_configured?'等待接口密钥':!qq.bound?'等待绑定':qqPermissionMissing?'等待开启主动发送':qq.last_error?'发送需检查':qqReady?(qq.active_send_verified?'已启用':'等待主动推送验证'):'正在连接';
+    $('qqDetails').textContent=qq.configured?`机器人对话框 · 已发正文 ${qq.sent_text??0} 条 · 图片 ${qq.sent_images??0} 张 · 待发 ${qq.outbox.pending??0} 条${qq.waiting_image?' · 等待原图下载':''}${qq.last_error?' · 错误码 '+qq.last_error:''}${qqPermissionMissing?' · 请检查机器人主动发送权限':''}${qq.last_test&&!qq.last_error?' · 主动测试已通过':''}`:'尚未配置机器人对话框。';
     $('imageStatus').textContent=`原图已保存 ${images.counts.ready??0}/${images.total} 张 · ${(images.bytes/1024/1024).toFixed(2)} MiB${images.counts.failed?' · '+images.counts.failed+' 张下载失败，自动重试':''}${images.counts.pending?' · '+images.counts.pending+' 张等待下载':''}`;
     $('videoStatus').textContent=!video.initialized?'等待建立基线':video.last_error?'视频检查异常':video.healthy?(qq.video_notifications_enabled?'监控中 · 群通知已启用':'目录正常 · 群通知未启用'):'等待检查 / 数据已过期';
     $('videoDetails').textContent=`已记录 ${video.stored_videos} 条视频 · 最近检查 ${formatTime(video.last_success)}${video.next_check?' · 下次 '+formatTime(video.next_check*1000):''} · 新视频通知已发 ${qq.sent_videos??0} 条${qq.video_last_test?' · 群通知测试已通过':''}${video.last_error?' · '+video.last_error:''}`;
@@ -53,8 +53,8 @@ async function refresh() {
     const file=download?.latest_file;
     if(file){const link=node('a',`${file.display_name||'已下载视频 #'+file.video_id} · ${file.width}×${file.height} · ${(file.size/1000000).toFixed(1)} MB · 打开 MP4`);link.href=file.local_url;link.target='_blank';link.rel='noopener noreferrer';$('videoDownloadLatest').replaceChildren(link);}
     else $('videoDownloadLatest').textContent='';
-    $('qqBindHelp').hidden=!(qq.secret_configured&&!qq.bound&&qq.binding_command);
-    $('qqBindCommand').textContent=qq.binding_command??'';
+    $('qqBindHelp').hidden=!(qq.secret_configured&&qq.binding_required);
+    $('qqBindCommand').textContent='';
     $('health').textContent=state.healthy?'采集运行正常':state.last_error?'采集异常':'等待采集 / 数据已过期';
     $('health').className=`badge${state.healthy?'':' error'}`;
     $('count').textContent=state.stored_posts; $('readable').textContent=state.readable_archived_posts;

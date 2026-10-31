@@ -66,7 +66,7 @@ def make_server(config, store):
                         self.reply({"configured": False})
                     else:
                         from .qq_push import QQQueue
-                        self.reply({"configured": True, **QQQueue(store).status()})
+                        self.reply({"configured": True, **QQQueue(store).status(redact_target=True)})
                 elif parsed.path == "/api/auth/session":
                     self.reply({"csrf": csrf})
                 elif parsed.path == "/api/posts":

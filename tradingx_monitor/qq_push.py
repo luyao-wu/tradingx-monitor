@@ -508,7 +508,7 @@ class QQQueue:
             self.store._update(db, qq_video_last_test=now(), qq_last_test_error=None)
         return message_id
 
-    def status(self):
+    def status(self, redact_target=False):
         settings = load_settings(self.store.config)
         with self.store.connect() as db:
             counts = {row[0]: row[1] for row in db.execute("SELECT status,COUNT(*) FROM qq_outbox GROUP BY status")}
@@ -531,4 +531,9 @@ class QQQueue:
                   "connection": state.get("qq_connection", "not_started"), "last_heartbeat": state.get("qq_heartbeat")}
         if not result["bound"]:
             result["binding_command"] = self.binding_command()
+        if redact_target:
+            for key in ("target_group_name", "target_group_number", "binding_command"):
+                result.pop(key, None)
+            result["target_label"] = "机器人对话框"
+            result["binding_required"] = not result["bound"]
         return result

@@ -1,21 +1,24 @@
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import MagicMock, Mock
 from urllib.error import HTTPError
+from urllib.request import urlopen
 from io import BytesIO
 
 from tradingx_monitor.config import Config
 from tradingx_monitor.qq_push import QQAPI, QQError, QQQueue, format_parts, load_settings, save_settings
 from tradingx_monitor.store import Store, now
+from tradingx_monitor.web import make_server
 from test_monitor import post, snapshot
 
 
 class QQPushTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.config = Config(root=Path(self.temp.name))
+        self.config = Config(root=Path(self.temp.name), port=0)
         self.store = Store(self.config)
         save_settings(self.config, {"appid":"123456", "target_group_number":"123456789", "target_group_name":"测试群", "group_openid":"", "enabled":False, "events":["new_post","updated"]})
         self.queue = QQQueue(self.store)
@@ -35,6 +38,39 @@ class QQPushTests(unittest.TestCase):
         self.bind()
         self.assertFalse(self.queue.bind("other_openid",self.queue.binding_command()))
         self.assertEqual(load_settings(self.config)["group_openid"],"opaque_group_openid")
+
+    def test_dashboard_hides_target_while_cli_and_real_binding_keep_original_configuration(self):
+        settings = load_settings(self.config)
+        settings["target_group_name"] = "PRIVATE_TARGET_MARKER"
+        save_settings(self.config, settings)
+        cli = self.queue.status()
+        self.assertEqual(cli["target_group_name"], "PRIVATE_TARGET_MARKER")
+        self.assertIn(settings["target_group_number"], cli["binding_command"])
+        server = make_server(self.config, self.store)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urlopen(f"http://127.0.0.1:{server.server_port}/api/qq/status") as response:
+                dashboard = json.load(response)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+        payload = json.dumps(dashboard, ensure_ascii=False)
+        for private_value in (settings["target_group_name"], settings["target_group_number"], cli["binding_command"]):
+            self.assertNotIn(private_value, payload)
+        self.assertEqual(dashboard["target_label"], "机器人对话框")
+        self.assertTrue(dashboard["binding_required"])
+        self.assertNotIn("target_group_name", dashboard)
+        self.assertNotIn("target_group_number", dashboard)
+        self.assertNotIn("binding_command", dashboard)
+        self.assertFalse(self.queue.bind(settings["target_group_number"], cli["binding_command"]))
+        self.assertTrue(self.queue.bind("opaque_privacy_group", cli["binding_command"]))
+        current = load_settings(self.config)
+        self.assertEqual(current["target_group_name"], settings["target_group_name"])
+        self.assertEqual(current["target_group_number"], settings["target_group_number"])
+        self.assertEqual(current["group_openid"], "opaque_privacy_group")
+        self.assertFalse(self.queue.status(redact_target=True)["binding_required"])
 
     def test_activation_skips_old_posts_but_new_and_edits_are_queued(self):
         self.ingest([post(1,"旧帖")])
