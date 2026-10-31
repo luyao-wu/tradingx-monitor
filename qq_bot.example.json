@@ -1,0 +1,10 @@
+{
+  "appid": "请填写官方AppID",
+  "target_group_number": "请填写QQ群号",
+  "target_group_name": "目标QQ群",
+  "group_openid": "",
+  "enabled": false,
+  "send_images": true,
+  "send_video_files": false,
+  "events": ["new_post", "updated", "video_new", "video_updated"]
+}

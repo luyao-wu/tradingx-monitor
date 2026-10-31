@@ -1,0 +1,8 @@
+{
+  "interval_seconds": 120,
+  "request_timeout": 20,
+  "max_pages": 10,
+  "jitter_ratio": 0.1,
+  "max_backoff_seconds": 1800,
+  "port": 8765
+}

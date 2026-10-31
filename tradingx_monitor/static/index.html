@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TradingX · 本地监控</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><div><p class="eyebrow">LOCAL MONITOR / 交易随手记</p><h1>TradingX <span>监控台</span></h1><p class="subtitle">最新动态、内容版本与采集状态，保存在这台电脑。</p></div><div class="status"><span id="health" class="badge">连接中</span><div><button id="connect">接入会员账号</button> <button id="refresh">刷新本地数据 ↻</button></div></div></header>
+    <section id="loginPanel" class="login-panel" hidden>
+      <h2>接入会员账号</h2>
+      <p>账号密码仅用于向 wall-street-skill.com 登录，本机只保存登录令牌。不要把密码发到聊天中。</p>
+      <form id="loginForm">
+        <label for="loginEmail">登录邮箱</label><input id="loginEmail" name="email" type="email" autocomplete="username" required maxlength="254">
+        <label for="loginPassword">密码</label><input id="loginPassword" name="password" type="password" autocomplete="current-password" required maxlength="512">
+        <button id="loginSubmit" type="submit">登录并接入监控</button>
+      </form>
+      <p id="loginResult" role="status" aria-live="polite"></p>
+    </section>
+    <section class="metrics" aria-label="监控统计">
+      <article><span>已归档帖子</span><strong id="count">—</strong><small id="coverage">等待首次采集</small></article>
+      <article><span>已归档正文</span><strong id="readable">—</strong><small id="access">正在检查权限</small></article>
+      <article><span>最近成功采集</span><strong class="time" id="success">—</strong><small id="next">—</small></article>
+    </section>
+    <section class="qq-panel" aria-label="QQ自动推送">
+      <div class="section-title"><h2>QQ 自动推送</h2><span id="qqStatus">检查中</span></div>
+      <p id="qqDetails">正在读取机器人连接状态。</p>
+      <p id="qqBindHelp" hidden>将机器人加入目标群后，在群中 @机器人发送：<br><code id="qqBindCommand"></code></p>
+    </section>
+    <p id="notice" class="notice" hidden></p>
+    <section class="qq-panel" aria-label="视频更新监控">
+      <div class="section-title"><h2>视频更新通知</h2><span id="videoStatus">检查中</span></div>
+      <p id="videoDetails">正在读取视频目录状态。</p>
+      <p id="latestVideo"></p>
+      <p id="videoDownloadStatus"></p><p id="videoDownloadLatest"></p>
+    </section>
+    <p id="imageStatus" class="image-status" aria-live="polite">正在读取原图归档状态。</p>
+    <div class="columns"><section><div class="section-title"><h2>最新帖子</h2><span>原站发布时间 · 新加坡时间</span></div><div id="posts" class="posts"><p class="empty">正在读取本地归档…</p></div></section>
+    <aside><div class="section-title"><h2>监控事件</h2><span>最近 30 条</span></div><div id="events" class="events"></div><div class="help"><h3>接入会员正文</h3><p>点击顶部「接入会员账号」，在本机输入邮箱和密码。登录成功后立即验证并归档正文。</p><p>也可在终端运行 <code>./monitor auth login</code>，或用 <code>./monitor auth set</code> 导入已有令牌。</p><a href="https://wall-street-skill.com/tradingx" target="_blank" rel="noreferrer noopener">打开 TradingX 原站 ↗</a></div></aside></div>
+    <footer><span>本地页面每 10 秒刷新 · 原站默认约每 2 分钟检查</span><span>电脑休眠或关机期间停止采集</span></footer>
+  </main>
+</body>
+</html>
